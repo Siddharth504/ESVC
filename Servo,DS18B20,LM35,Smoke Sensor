@@ -1,0 +1,146 @@
+#include <Servo.h>
+#include <DallasTemperature.h>
+#include <OneWire.h>
+//-----Digital Pins Starts Here--------//
+int t_DS18B20pin=1;
+int t_servoPin1= 2;
+int t_servoPin2=3;
+//int t_ledPin1=4,t_ledPin2=5,t_ledPin3=6;//For LM35 {(A0,4),(A1,5),(A2,6)}
+int t_ledPin4=7,t_ledPin5=8;//For DS18B20
+int t_ledPin6=9;//For MQ2 smoke sensors
+//-----Digital Pins Stops here--------//
+//-----Analog Pins Starts here-------//
+int t_LM35pin1 = A0,t_LM35pin2 = A1,t_LM35pin3 = A2;
+int t_MQ2pin = A3;
+//-----Analog Pins Stops here--------//
+/*float temp4=0;
+float temp5=0;*/
+//------Object Creation Begins------//
+OneWire t_oneWirePin(t_DS18B20pin);
+DallasTemperature t_sensor1(&t_oneWirePin);
+Servo t_servo1;
+Servo t_servo2;
+//------Object Creation Stops Here-----//
+//---------------------End--------------------//
+//-----------MQ2 variables--------------------//
+char t_smoke_alert;//variable that store either 'Y' for Smoke or 'N' for Smoke
+//---------------------End--------------------//
+float t_temp1,t_temp2,t_temp3,t_temp4,t_temp5;//variables that stores the temperature data from sensors
+//--Ds18b20 variables to be used in rotate() and data_update() function--//
+float t_sense4_avg;//stores the average temperature data from ds18b20 sensor no 1,average is taken of 10 readings
+float t_sense5_avg;//stores the average temperature data from ds18b20 sensor n0 2,average is taken of 10 readings
+
+void setup() {
+  Serial.begin(9600);
+  //The digital pin of Servo is connected to the pin 2 of Arduino
+  t_servo1.attach(t_servoPin1);
+  t_servo2.attach(t_servoPin2);
+  //Sets the Servo Motor to Zero Position
+  t_servo1.write(0);
+  t_servo2.write(0);
+}
+
+void loop() {
+  t_temp1=temp_sense(t_LM35pin1);//This function takes the argument as the pin number of the LM35 sensors and returns the Temperature from that sensors
+  t_temp2=temp_sense(t_LM35pin2);
+  t_temp3=temp_sense(t_LM35pin3);
+  t_temp4=t_temp_ds1();
+  t_temp5=t_temp_ds2();
+  t_smoke_alert = indicate();
+  data(t_temp1,t_temp2,t_temp3,t_temp4,t_temp5,t_smoke_alert);//Initial updation of the temperature & smoke sensors and sending the data frame
+  rotate();//Rotating the Servo Motor and Taking the average values of the ds18b20 sensors and then updating the data frame
+}
+//Function created for LM35 Taking temperature data
+int temp_sense(int t_A){//here the parameter is the pin number of the LM35 temperature sensors
+  float t_vout=analogRead(t_A);
+  float t_temp = (t_vout*500)/1024;
+  return t_temp;
+}
+//DATA FRAME Function to display on Serial Monitor
+int data(float t1,float t2,float t3,float t4,float t5,char alert){//function that stores the data of sensors in string and returns it,t'i' is the temperature from sensor nummber i
+  String fts1=String(t1);//converting float value of temperature to strings
+  String fts2=String(t2);
+  String fts3=String(t3);
+  String fts4=String(t4);
+  String fts5=String(t5);
+  String cts=String(alert);
+  String bp="#";//starting point of our data strin
+  String ep="@";//end point of our data string
+  String sep="$";// separator of our data string
+  String alpha=bp+fts1+sep+"a"+sep+fts2+"b"+sep+fts3+sep+"c"+sep+fts4+"d"+sep+fts5+sep+"e"+sep+cts+ep;/*adding all the parts of data strings and a,b,c,d,e are the locations from where we are getting the temperature*/
+  Serial.print(alpha);
+  Serial.println();
+  delay(1000);
+}
+//LED indication for Smoke Sensors
+int indicate(){//function for indicating smoke has crossed the threshold temperature
+  int t_smoke = analogRead(t_MQ2pin);
+  char alert;
+  if(t_smoke > 271){//when it first detects the smoke it waits for two seconds 
+    delay(2000);
+    if(t_smoke > 271){//After 2 seconds if again the smoke is present it waits for next 5 seconds and if smoke is not present returns the alert message 'N' - smoke not detected
+      delay(5000);
+      if(t_smoke > 271){//After those 5 seconds still the smoke is present it gives the alert message 'Y',here 'Y' stands for smoke is present and if smoke is not detected returns the message 'N'-smoke not detected
+        alert='Y';
+      }
+      else{
+        alert='N';
+      }
+    }
+    else{
+      alert='N';
+    }
+  }
+  else{
+    alert='N';
+  }
+  return alert;
+}
+//Function for DS18B20 temperature sensors
+int t_temp_ds1(){
+  t_sensor1.requestTemperatures();
+  float t_dstemp1=t_sensor1.getTempCByIndex(0);
+  return t_dstemp1;
+}
+int t_temp_ds2(){
+  t_sensor1.requestTemperatures();
+  float t_dstemp2=t_sensor1.getTempCByIndex(1);
+  return t_dstemp2;
+}
+//Function for rotating the Servo Motors
+int rotate()
+{
+  float t_sense4_sum=0;
+  float t_sense5_sum=0;
+  for(int i=0;i<=180;i=i+18){
+    t_servo1.write(i);
+    t_servo2.write(i);
+    t_temp4=t_temp_ds1();
+    t_sense4_sum+=t_temp4;
+    t_temp5=t_temp_ds2();
+    t_sense5_sum+=t_temp5;
+  }
+  t_sense4_avg = t_sense4_sum/10;
+  t_sense5_avg = t_sense5_sum/10;
+  data_update();//Here should be a function that takes the average temperature readings from DS18B20 and updates the  data frame during clockwise rotation
+  for(int i=180;i>=0;i=i-18){
+    t_servo1.write(i);
+    t_servo2.write(i);
+    t_temp4=t_temp_ds1();
+    t_sense4_sum+=t_temp4;
+    t_temp5=t_temp_ds2();
+    t_sense5_sum+=t_temp5;
+  }
+  t_sense4_avg = t_sense4_sum/10;
+  t_sense5_avg = t_sense5_sum/10;
+  data_update();//Here should be a function that takes the average temperature readings from DS18B20 and updates the  data frame during clockwise rotation
+}
+int data_update(){//This is the function that updates the data frame with new data of LM35 sensors and average values of the DS18B20 temperature sensors
+  t_temp1=temp_sense(t_LM35pin1);
+  t_temp2=temp_sense(t_LM35pin2);
+  t_temp3=temp_sense(t_LM35pin3);
+  t_temp4=t_sense4_avg;//the fourth temperature sensor which is a DS18B20 temperature sensor takes the average value in one cycle i.e. 0 to 180
+  t_temp5=t_sense5_avg;//the fourth temperature sensor which is a DS18B20 temperature sensor takes the average value in one cycle i.e. 0 to 180
+  t_smoke_alert = indicate();
+  data(t_temp1,t_temp2,t_temp3,t_temp4,t_temp5,t_smoke_alert);
+}
